@@ -1,0 +1,84 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Core profile for nex Monie users.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "tier": { "type": "string", "enum": ["nex Basic", "nex Elite", "nex Premium"] },
+        "isVerified": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending"] },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "preferredLanguage": { "type": "string", "default": "English" }
+      },
+      "required": ["email", "tier", "isVerified", "status"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "User balances in NGN.",
+      "type": "object",
+      "properties": {
+        "available": { "type": "number" },
+        "savings": { "type": "number" },
+        "investments": { "type": "number" },
+        "vault": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial movement record.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense", "transfer"] },
+        "category": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["completed", "pending", "failed"] },
+        "referenceId": { "type": "string" }
+      }
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Available gig in the Earn section.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "company": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "daysLeft": { "type": "number" },
+        "applicants": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "difficulty": { "type": "string", "enum": ["beginner", "intermediate", "expert"] }
+      }
+    }
+  },
+  "auth": {
+    "providers": ["google.com", "password", "emailLink"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile data."
+    },
+    "/users/{userId}/wallets/main": {
+      "schema": "Wallet",
+      "description": "The primary financial wallet."
+    },
+    "/users/{userId}/transactions": {
+      "schema": "Transaction",
+      "description": "Transaction history."
+    },
+    "/tasks": {
+      "schema": "Task",
+      "description": "Global gig feed."
+    }
+  }
+}

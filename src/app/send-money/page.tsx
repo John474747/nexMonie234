@@ -1,0 +1,523 @@
+
+"use client"
+
+import React, { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { 
+  ChevronLeft, 
+  Search, 
+  User, 
+  Building2, 
+  Users, 
+  ArrowRight, 
+  CreditCard, 
+  CheckCircle2, 
+  Loader2, 
+  Lock, 
+  Fingerprint, 
+  ShieldCheck,
+  Smartphone,
+  Info,
+  History
+} from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { NexLogo } from '@/components/ui/NexLogo'
+import { BottomNav } from '@/components/layout/BottomNav'
+import { cn } from '@/lib/utils'
+import { useUser, useDoc, useFirebase } from '@/firebase'
+import { doc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { useToast } from '@/hooks/use-toast'
+
+type TransferType = 'nex' | 'bank'
+type Bank = { id: string, name: string }
+type Recipient = { id: string, displayName: string, username?: string, photoURL?: string, accountNumber?: string, bankName?: string }
+
+export default function SendMoneyWorkflow() {
+  const router = useRouter()
+  const { user } = useUser()
+  const { db } = useFirebase()
+  const { toast } = useToast()
+
+  const [stage, setStage] = useState<'details' | 'review' | 'authenticate' | 'success' | 'failure'>('details')
+  const [loading, setLoading] = useState(false)
+  const [transferType, setTransferType] = useState<TransferType>('nex')
+
+  // Form State
+  const [banks, setBanks] = useState<Bank[]>([])
+  const [selectedBank, setSelectedBank] = useState<string>('')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [recipient, setRecipient] = useState<Recipient | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Recipient[]>([])
+  const [amount, setAmount] = useState('')
+  const [narration, setNarration] = useState('')
+  const [resolving, setResolving] = useState(false)
+  const [authMethod, setAuthMethod] = useState<'pin' | 'biometric' | 'totp'>('pin')
+
+  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
+  const { data: wallet } = useDoc<any>(walletRef)
+
+  useEffect(() => {
+    if (transferType === 'bank') {
+      fetch('/api/banks').then(r => r.json()).then(setBanks)
+    }
+  }, [transferType])
+
+  useEffect(() => {
+    if (transferType === 'nex' && searchQuery.length > 2) {
+      const delay = setTimeout(() => {
+        fetch(`/api/users/search?query=${searchQuery}`).then(r => r.json()).then(setSearchResults)
+      }, 500)
+      return () => clearTimeout(delay)
+    }
+  }, [searchQuery, transferType])
+
+  const handleResolveAccount = async () => {
+    if (transferType === 'bank' && accountNumber.length === 10 && selectedBank) {
+      setResolving(true)
+      try {
+        const res = await fetch('/api/bank/resolve-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountNumber, bankCode: selectedBank })
+        })
+        const data = await res.json()
+        if (data.success) {
+          setRecipient({
+            id: 'bank-user',
+            displayName: data.accountName,
+            accountNumber,
+            bankName: banks.find(b => b.id === selectedBank)?.name
+          })
+        }
+      } catch (e) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not resolve account' })
+      } finally {
+        setResolving(false)
+      }
+    }
+  }
+
+  const handleDetailsContinue = () => {
+    if (!recipient || !amount || Number(amount) < 100) {
+      toast({ variant: 'destructive', title: 'Invalid Entry', description: 'Please complete recipient and amount details.' })
+      return
+    }
+    setStage('review')
+  }
+
+  const handleTransfer = async () => {
+    if (!user || !wallet || !recipient) return
+    const numericAmount = Number(amount)
+    const fee = transferType === 'bank' ? 10 : 0
+    const totalDebit = numericAmount + fee
+
+    if (wallet.available < totalDebit) {
+      toast({ variant: 'destructive', title: 'Insufficient Funds', description: 'Wallet balance is too low.' })
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await fetch('/api/transfers/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient,
+          amount: numericAmount,
+          transferType,
+          narration
+        })
+      })
+
+      const result = await res.json()
+
+      if (result.success) {
+        await updateDoc(walletRef!, {
+          available: increment(-totalDebit),
+          lastUpdated: serverTimestamp()
+        })
+
+        await addDoc(collection(db, 'users', user.uid, 'transactions'), {
+          title: `Transfer to ${recipient.displayName}`,
+          amount: numericAmount,
+          type: 'transfer',
+          category: 'Transfer',
+          timestamp: serverTimestamp(),
+          status: 'completed',
+          referenceId: result.transactionId,
+          details: { ...recipient, type: transferType, fee }
+        })
+
+        setStage('success')
+      } else {
+        setStage('failure')
+      }
+    } catch (e) {
+      setStage('failure')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (stage === 'details') {
+    return (
+      <main className="min-h-screen pb-32 bg-[#F8FAF9]">
+        <header className="px-6 pt-8 pb-4 bg-white sticky top-0 z-30 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <button onClick={() => router.back()} className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center text-[#1A1A1A] active:scale-90 transition-all border border-gray-100">
+              <ChevronLeft size={22} />
+            </button>
+            <NexLogo />
+            <div className="w-10" />
+          </div>
+          <div>
+            <h1 className="text-[22px] font-bold text-[#1A1A1A] leading-tight mb-1">Send Money</h1>
+            <p className="text-[14px] text-gray-500 font-medium">Instant funds transfer to anyone.</p>
+          </div>
+        </header>
+
+        <div className="px-6 py-8">
+          <Tabs defaultValue="nex" onValueChange={(v) => setTransferType(v as TransferType)} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-8 rounded-2xl h-14 bg-gray-100 p-1">
+              <TabsTrigger value="nex" className="rounded-xl font-bold data-[state=active]:bg-primary data-[state=active]:text-white">nexMonie User</TabsTrigger>
+              <TabsTrigger value="bank" className="rounded-xl font-bold data-[state=active]:bg-primary data-[state=active]:text-white">Bank Account</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="nex" className="space-y-6">
+              <section>
+                <h2 className="text-[15px] font-bold text-[#1A1A1A] mb-4">Recipient</h2>
+                <Card className="p-6 border-none shadow-soft rounded-[28px] bg-white">
+                  {recipient ? (
+                    <div className="flex items-center justify-between p-3 bg-primary/5 rounded-2xl border border-primary/10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                          {recipient.photoURL ? <img src={recipient.photoURL} className="w-full h-full object-cover" /> : <User size={20} className="text-primary" />}
+                        </div>
+                        <div>
+                          <p className="text-[14px] font-bold text-[#1A1A1A]">{recipient.displayName}</p>
+                          <p className="text-[11px] text-gray-400 font-medium">@{recipient.username}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setRecipient(null)} className="text-[11px] font-bold text-accent">Change</button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="relative group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary" size={18} />
+                        <Input 
+                          placeholder="Search Username or ID" 
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="h-14 pl-12 rounded-2xl bg-gray-50 border-none"
+                        />
+                      </div>
+                      {searchResults.length > 0 && (
+                        <div className="space-y-2 max-h-[200px] overflow-y-auto pt-2">
+                          {searchResults.map(u => (
+                            <button key={u.id} onClick={() => setRecipient(u)} className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors">
+                              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                                {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <User size={20} className="text-gray-400" />}
+                              </div>
+                              <div className="text-left">
+                                <p className="text-[13px] font-bold text-[#1A1A1A]">{u.displayName}</p>
+                                <p className="text-[10px] text-gray-400">@{u.username}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="pt-2">
+                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <History size={12} /> Recent Recipients
+                        </p>
+                        <div className="flex gap-4 overflow-x-auto pb-2">
+                           {[1,2,3].map(i => (
+                             <div key={i} className="flex flex-col items-center gap-1 shrink-0">
+                               <div className="w-12 h-12 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center">
+                                 <User size={22} className="text-gray-300" />
+                               </div>
+                               <span className="text-[10px] text-gray-500">Member</span>
+                             </div>
+                           ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </section>
+            </TabsContent>
+
+            <TabsContent value="bank" className="space-y-6">
+              <section>
+                <h2 className="text-[15px] font-bold text-[#1A1A1A] mb-4">Bank Details</h2>
+                <Card className="p-6 border-none shadow-soft rounded-[28px] bg-white space-y-5">
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Select Bank</label>
+                    <Select value={selectedBank} onValueChange={setSelectedBank}>
+                      <SelectTrigger className="h-14 rounded-2xl bg-gray-50 border-none">
+                        <SelectValue placeholder="Choose Bank" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-2xl border-none shadow-xl">
+                        {banks.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Account Number</label>
+                    <div className="relative group">
+                      <Input 
+                        placeholder="10 Digits" 
+                        value={accountNumber}
+                        maxLength={10}
+                        onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                        onBlur={handleResolveAccount}
+                        className="h-14 rounded-2xl bg-gray-50 border-none pr-12"
+                      />
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                        {resolving ? <Loader2 size={18} className="animate-spin text-primary" /> : <Search size={18} className="text-gray-300" />}
+                      </div>
+                    </div>
+                  </div>
+                  {recipient?.bankName && (
+                    <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 animate-in fade-in duration-300">
+                      <p className="text-[13px] font-bold text-primary leading-none">{recipient.displayName}</p>
+                      <p className="text-[11px] text-gray-500 mt-1 uppercase font-bold tracking-tighter">{recipient.bankName}</p>
+                    </div>
+                  )}
+                </Card>
+              </section>
+            </TabsContent>
+          </Tabs>
+
+          <section className="mt-8 mb-10">
+            <h2 className="text-[15px] font-bold text-[#1A1A1A] mb-4">Amount & Narration</h2>
+            <Card className="p-6 border-none shadow-soft rounded-[28px] bg-white space-y-6">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Transfer Amount</label>
+                <div className="relative group">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-[#1A1A1A]">₦</span>
+                  <Input 
+                    placeholder="0.00" 
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))}
+                    className="h-14 pl-8 rounded-2xl bg-gray-50 border-none font-bold text-[18px]"
+                  />
+                </div>
+                {wallet && <p className="text-[11px] text-gray-400 font-medium ml-1">Balance: <span className="text-primary font-bold">₦{wallet.available.toLocaleString()}</span></p>}
+              </div>
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest ml-1">Optional Description</label>
+                <Input 
+                  placeholder="What is this for?" 
+                  value={narration}
+                  onChange={(e) => setNarration(e.target.value)}
+                  className="h-14 rounded-2xl bg-gray-50 border-none"
+                />
+              </div>
+            </Card>
+          </section>
+
+          <button 
+            onClick={handleDetailsContinue}
+            className="w-full py-5 bg-primary text-white font-bold rounded-[22px] shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
+          >
+            Continue
+          </button>
+        </div>
+        <BottomNav />
+      </main>
+    )
+  }
+
+  if (stage === 'review') {
+    const numericAmount = Number(amount)
+    const fee = transferType === 'bank' ? 10 : 0
+    const total = numericAmount + fee
+
+    return (
+      <main className="min-h-screen pb-32 bg-[#F8FAF9]">
+        <header className="px-6 pt-8 pb-4 bg-white sticky top-0 z-30 shadow-sm">
+          <div className="flex items-center justify-between">
+            <button onClick={() => setStage('details')} className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center text-[#1A1A1A] active:scale-90 transition-all border border-gray-100">
+              <ChevronLeft size={22} />
+            </button>
+            <h1 className="text-[18px] font-bold text-[#1A1A1A]">Confirm Transfer</h1>
+            <div className="w-10" />
+          </div>
+        </header>
+
+        <div className="px-6 py-10">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-primary/10 rounded-[28px] flex items-center justify-center text-primary mx-auto mb-4">
+              <CreditCard size={36} />
+            </div>
+            <div className="text-[32px] font-bold text-[#1A1A1A] mb-1">₦{total.toLocaleString()}</div>
+            <p className="text-[13px] text-gray-500 font-medium">{transferType === 'nex' ? 'nexMonie Transfer' : 'Bank Transfer'}</p>
+          </div>
+
+          <Card className="p-6 border-none shadow-soft rounded-[32px] bg-white mb-8 space-y-5">
+            <SummaryRow label="Recipient" value={recipient?.displayName || ''} />
+            {transferType === 'nex' ? (
+              <SummaryRow label="Username" value={`@${recipient?.username}`} />
+            ) : (
+              <>
+                <SummaryRow label="Bank" value={recipient?.bankName || ''} />
+                <SummaryRow label="Account Number" value={recipient?.accountNumber || ''} />
+              </>
+            )}
+            <SummaryRow label="Amount" value={`₦${numericAmount.toLocaleString()}`} />
+            <SummaryRow label="Transaction Fee" value={`₦${fee.toLocaleString()}`} />
+            {narration && <SummaryRow label="Narration" value={narration} />}
+            <div className="pt-4 mt-4 border-t border-gray-50 flex justify-between items-center">
+              <span className="text-[12px] font-bold text-primary uppercase tracking-widest">Total to Debit</span>
+              <span className="text-[20px] font-bold text-primary">₦{total.toLocaleString()}</span>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-2 gap-4">
+            <button onClick={() => setStage('details')} className="py-4 bg-gray-100 text-gray-500 font-bold rounded-[22px] active:scale-95 transition-all">
+              Edit Details
+            </button>
+            <button onClick={() => setStage('authenticate')} className="py-4 bg-primary text-white font-bold rounded-[22px] shadow-lg shadow-primary/20 active:scale-95 transition-all">
+              Confirm Transfer
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (stage === 'authenticate') {
+    return (
+      <main className="min-h-screen pb-32 bg-[#F8FAF9]">
+        <header className="px-6 pt-8 pb-4 bg-white sticky top-0 z-30">
+          <div className="flex items-center justify-between">
+            <button onClick={() => setStage('review')} className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center text-[#1A1A1A] active:scale-90 transition-all border border-gray-100">
+              <ChevronLeft size={22} />
+            </button>
+            <h1 className="text-[18px] font-bold text-[#1A1A1A]">Authorize</h1>
+            <div className="w-10" />
+          </div>
+        </header>
+
+        <div className="px-6 py-10">
+          <div className="text-center mb-10 px-4">
+            <h2 className="text-[22px] font-bold text-[#1A1A1A] mb-2">Final Step</h2>
+            <p className="text-[14px] text-gray-500">Securely verify your identity to complete the transfer.</p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 mb-10">
+            <AuthCard active={authMethod === 'pin'} onClick={() => setAuthMethod('pin')} icon={<Lock size={18} />} label="PIN" />
+            <AuthCard active={authMethod === 'biometric'} onClick={() => setAuthMethod('biometric')} icon={<Fingerprint size={18} />} label="Biometric" />
+            <AuthCard active={authMethod === 'totp'} onClick={() => setAuthMethod('totp')} icon={<ShieldCheck size={18} />} label="TOTP" />
+          </div>
+
+          <button 
+            disabled={loading}
+            onClick={handleTransfer}
+            className="w-full py-5 bg-primary text-white font-bold rounded-[22px] shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="animate-spin" /> : <>Complete Transfer <ArrowRight size={18} /></>}
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  if (stage === 'success') {
+    return (
+      <main className="min-h-screen flex flex-col bg-white">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-24 h-24 bg-primary rounded-[32px] flex items-center justify-center text-white shadow-2xl shadow-primary/30 mb-8 animate-in zoom-in-50 duration-500">
+            <CheckCircle2 size={56} />
+          </div>
+          
+          <h1 className="text-[28px] font-bold text-[#1A1A1A] mb-2">Transfer Successful!</h1>
+          <p className="text-[15px] text-gray-500 font-medium mb-12 max-w-[260px]">
+            ₦{Number(amount).toLocaleString()} has been sent to <span className="text-primary font-bold">{recipient?.displayName}</span>.
+          </p>
+
+          <Card className="w-full p-6 border-none shadow-soft rounded-[32px] bg-gray-50 mb-10 space-y-4">
+             <div className="flex justify-between items-center text-[13px]">
+                <span className="text-gray-400 font-bold uppercase tracking-wider">Reference</span>
+                <span className="text-[#1A1A1A] font-bold uppercase">TXN-{Math.random().toString(36).substring(2, 10).toUpperCase()}</span>
+             </div>
+             <div className="flex justify-between items-center text-[13px]">
+                <span className="text-gray-400 font-bold uppercase tracking-wider">Status</span>
+                <span className="text-emerald-500 font-bold uppercase">Completed</span>
+             </div>
+          </Card>
+
+          <div className="w-full space-y-3">
+            <button className="w-full py-4 bg-[#1A1A1A] text-white font-bold rounded-[20px]">
+              Download Receipt
+            </button>
+            <button onClick={() => router.push('/')} className="w-full py-4 bg-white text-primary font-bold rounded-[20px] border border-gray-100">
+              Return Home
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (stage === 'failure') {
+    return (
+      <main className="min-h-screen flex flex-col bg-white">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-24 h-24 bg-red-500 rounded-[32px] flex items-center justify-center text-white shadow-2xl shadow-red-500/30 mb-8">
+            <Info size={56} />
+          </div>
+          
+          <h1 className="text-[28px] font-bold text-[#1A1A1A] mb-2">Transfer Failed</h1>
+          <p className="text-[15px] text-gray-500 font-medium mb-12 max-w-[260px]">
+            Something went wrong with this transaction. Please try again later.
+          </p>
+
+          <div className="w-full space-y-3">
+            <button onClick={() => setStage('authenticate')} className="w-full py-4 bg-primary text-white font-bold rounded-[20px]">
+              Retry Transfer
+            </button>
+            <button onClick={() => setStage('details')} className="w-full py-4 bg-white text-gray-500 font-bold rounded-[20px] border border-gray-100">
+              Edit Details
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  return null
+}
+
+function SummaryRow({ label, value }: { label: string, value: string }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
+      <span className="text-[14px] font-bold text-[#1A1A1A]">{value}</span>
+    </div>
+  )
+}
+
+function AuthCard({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all active:scale-95",
+        active 
+          ? "border-primary bg-primary/5 text-primary" 
+          : "border-gray-50 bg-gray-50 text-gray-400"
+      )}
+    >
+      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors", active ? "bg-primary text-white" : "bg-white")}>
+        {icon}
+      </div>
+      <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
+    </button>
+  )
+}
