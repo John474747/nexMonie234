@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -27,9 +27,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { NexLogo } from '@/components/ui/NexLogo'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { cn } from '@/lib/utils'
-import { useUser, useDoc, useFirebase } from '@/firebase'
-import { doc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { useUser, useDoc } from '@/firebase'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
 
 type TransferType = 'nex' | 'bank'
 type Bank = { id: string, name: string }
@@ -38,7 +38,6 @@ type Recipient = { id: string, displayName: string, username?: string, photoURL?
 export default function SendMoneyWorkflow() {
   const router = useRouter()
   const { user } = useUser()
-  const { db } = useFirebase()
   const { toast } = useToast()
 
   const [stage, setStage] = useState<'details' | 'review' | 'authenticate' | 'success' | 'failure'>('details')
@@ -57,8 +56,7 @@ export default function SendMoneyWorkflow() {
   const [resolving, setResolving] = useState(false)
   const [authMethod, setAuthMethod] = useState<'pin' | 'biometric' | 'totp'>('pin')
 
-  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
-  const { data: wallet } = useDoc<any>(walletRef)
+  const { data: wallet } = useDoc<any>(user ? { table: 'wallets', id: user.id } : null)
 
   useEffect(() => {
     if (transferType === 'bank') {
@@ -136,20 +134,18 @@ export default function SendMoneyWorkflow() {
       const result = await res.json()
 
       if (result.success) {
-        await updateDoc(walletRef!, {
-          available: increment(-totalDebit),
-          lastUpdated: serverTimestamp()
-        })
+        await supabase.from('wallets').update({ available: (wallet?.available ?? 0) - (totalDebit), last_updated: new Date().toISOString() }).eq('user_id', user.id)
 
-        await addDoc(collection(db, 'users', user.uid, 'transactions'), {
-          title: `Transfer to ${recipient.displayName}`,
+        await supabase.from('transactions').insert({
+          user_id: user.id,
+          title: `Transfer to ${recipient?.displayName}`,
           amount: numericAmount,
           type: 'transfer',
-          category: 'Transfer',
-          timestamp: serverTimestamp(),
+          category: transferType === 'bank' ? 'Bank Transfer' : 'Nex Transfer',
+          narration,
+          created_at: new Date().toISOString(),
           status: 'completed',
-          referenceId: result.transactionId,
-          details: { ...recipient, type: transferType, fee }
+          reference_id: result.transactionId
         })
 
         setStage('success')

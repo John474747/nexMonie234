@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -20,9 +20,9 @@ import { Input } from '@/components/ui/input'
 import { NexLogo } from '@/components/ui/NexLogo'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { cn } from '@/lib/utils'
-import { useUser, useDoc, useFirebase } from '@/firebase'
-import { doc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { useUser, useDoc } from '@/firebase'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
 
 const NETWORKS = ['MTN', 'Airtel', 'Glo', '9mobile']
 
@@ -36,7 +36,6 @@ type DataPlan = {
 export default function BuyDataWorkflow() {
   const router = useRouter()
   const { user } = useUser()
-  const { db } = useFirebase()
   const { toast } = useToast()
 
   const [stage, setStage] = useState<'input' | 'confirm' | 'success'>('input')
@@ -49,8 +48,7 @@ export default function BuyDataWorkflow() {
   const [selectedPlan, setSelectedPlan] = useState<DataPlan | null>(null)
   const [authMethod, setAuthMethod] = useState<'pin' | 'biometric' | 'totp'>('pin')
 
-  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
-  const { data: wallet } = useDoc<any>(walletRef)
+  const { data: wallet } = useDoc<any>(user ? { table: 'wallets', id: user.id } : null)
 
   useEffect(() => {
     async function fetchPlans() {
@@ -109,19 +107,17 @@ export default function BuyDataWorkflow() {
       const result = await res.json()
 
       if (result.success) {
-        await updateDoc(walletRef!, {
-          available: increment(-selectedPlan.price),
-          lastUpdated: serverTimestamp()
-        })
+        await supabase.from('wallets').update({ available: (wallet?.available ?? 0) - (selectedPlan.price), last_updated: new Date().toISOString() }).eq('user_id', user.id)
 
-        await addDoc(collection(db, 'users', user.uid, 'transactions'), {
+        await supabase.from('transactions').insert({
+          user_id: user.id,
           title: `Data Purchase - ${selectedNetwork}`,
           amount: selectedPlan.price,
           type: 'expense',
           category: 'Data Bundle',
-          timestamp: serverTimestamp(),
+          created_at: new Date().toISOString(),
           status: 'completed',
-          referenceId: result.transactionId,
+          reference_id: result.transactionId,
           recipient: phoneNumber
         })
 

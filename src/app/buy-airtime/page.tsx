@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -21,9 +21,9 @@ import { Input } from '@/components/ui/input'
 import { NexLogo } from '@/components/ui/NexLogo'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { cn } from '@/lib/utils'
-import { useUser, useDoc, useFirebase } from '@/firebase'
-import { doc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { useUser, useDoc } from '@/firebase'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000, 2000, 5000]
 
@@ -36,7 +36,6 @@ type Network = {
 export default function BuyAirtimeWorkflow() {
   const router = useRouter()
   const { user } = useUser()
-  const { db } = useFirebase()
   const { toast } = useToast()
 
   const [stage, setStage] = useState<'input' | 'confirm' | 'success'>('input')
@@ -49,8 +48,7 @@ export default function BuyAirtimeWorkflow() {
   const [amount, setAmount] = useState('')
   const [authMethod, setAuthMethod] = useState<'pin' | 'biometric' | 'totp'>('pin')
 
-  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
-  const { data: wallet } = useDoc<any>(walletRef)
+  const { data: wallet } = useDoc<any>(user ? { table: 'wallets', id: user.id } : null)
 
   useEffect(() => {
     async function fetchNetworks() {
@@ -117,19 +115,17 @@ export default function BuyAirtimeWorkflow() {
       const result = await res.json()
 
       if (result.success) {
-        await updateDoc(walletRef!, {
-          available: increment(-numericAmount),
-          lastUpdated: serverTimestamp()
-        })
+        await supabase.from('wallets').update({ available: (wallet?.available ?? 0) - (numericAmount), last_updated: new Date().toISOString() }).eq('user_id', user.id)
 
-        await addDoc(collection(db, 'users', user.uid, 'transactions'), {
+        await supabase.from('transactions').insert({
+          user_id: user.id,
           title: `Airtime Top-up - ${selectedNetwork.name}`,
           amount: numericAmount,
           type: 'expense',
           category: 'Airtime',
-          timestamp: serverTimestamp(),
+          created_at: new Date().toISOString(),
           status: 'completed',
-          referenceId: result.transactionId,
+          reference_id: result.transactionId,
           recipient: phoneNumber
         })
 

@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -26,16 +26,15 @@ import { Input } from '@/components/ui/input'
 import { NexLogo } from '@/components/ui/NexLogo'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { cn } from '@/lib/utils'
-import { useUser, useDoc, useFirebase } from '@/firebase'
-import { doc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { useUser, useDoc } from '@/firebase'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
 
 type Stage = 'scan' | 'review' | 'authenticate' | 'success' | 'failure'
 
 export default function ScanPayWorkflow() {
   const router = useRouter()
   const { user } = useUser()
-  const { db } = useFirebase()
   const { toast } = useToast()
 
   const [stage, setStage] = useState<Stage>('scan')
@@ -47,8 +46,7 @@ export default function ScanPayWorkflow() {
   const [amount, setAmount] = useState('')
   const [authMethod, setAuthMethod] = useState<'pin' | 'biometric' | 'totp'>('pin')
 
-  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
-  const { data: wallet } = useDoc<any>(walletRef)
+  const { data: wallet } = useDoc<any>(user ? { table: 'wallets', id: user.id } : null)
 
   const handleSimulateScan = async (type: 'static' | 'dynamic') => {
     setDecoding(true)
@@ -91,27 +89,24 @@ export default function ScanPayWorkflow() {
         body: JSON.stringify({
           merchantId: merchant.merchantId,
           amount: numericAmount,
-          userId: user.uid
+          userId: user.id
         })
       })
 
       const result = await res.json()
 
       if (result.success) {
-        await updateDoc(walletRef!, {
-          available: increment(-totalDebit),
-          lastUpdated: serverTimestamp()
-        })
+        await supabase.from('wallets').update({ available: (wallet?.available ?? 0) - (totalDebit), last_updated: new Date().toISOString() }).eq('user_id', user.id)
 
-        await addDoc(collection(db, 'users', user.uid, 'transactions'), {
+        await supabase.from('transactions').insert({
+          user_id: user.id,
           title: `QR Payment - ${merchant.merchantName}`,
           amount: numericAmount,
           type: 'expense',
           category: 'Scan & Pay',
-          timestamp: serverTimestamp(),
+          created_at: new Date().toISOString(),
           status: 'completed',
-          referenceId: result.transactionId,
-          merchantDetails: merchant
+          reference_id: result.transactionId
         })
 
         setStage('success')

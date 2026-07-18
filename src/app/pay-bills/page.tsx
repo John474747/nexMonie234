@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ChevronLeft, 
@@ -28,9 +28,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { NexLogo } from '@/components/ui/NexLogo'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { cn } from '@/lib/utils'
-import { useUser, useDoc, useFirebase } from '@/firebase'
-import { doc, updateDoc, collection, addDoc, serverTimestamp, increment } from 'firebase/firestore'
+import { useUser, useDoc } from '@/firebase'
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
 
 type Category = { id: string, name: string, icon: string }
 type Provider = { id: string, name: string }
@@ -39,7 +39,6 @@ type Package = { id: string, name: string, price: number }
 export default function PayBillsWorkflow() {
   const router = useRouter()
   const { user } = useUser()
-  const { db } = useFirebase()
   const { toast } = useToast()
 
   const [stage, setStage] = useState<'details' | 'review' | 'authenticate' | 'success' | 'failure'>('details')
@@ -60,8 +59,7 @@ export default function PayBillsWorkflow() {
   const [customerName, setCustomerName] = useState('')
   const [authMethod, setAuthMethod] = useState<'pin' | 'biometric' | 'totp'>('pin')
 
-  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
-  const { data: wallet } = useDoc<any>(walletRef)
+  const { data: wallet } = useDoc<any>(user ? { table: 'wallets', id: user.id } : null)
 
   // Initialization
   useEffect(() => {
@@ -150,20 +148,18 @@ export default function PayBillsWorkflow() {
       const result = await res.json()
 
       if (result.success) {
-        await updateDoc(walletRef!, {
-          available: increment(-totalDebit),
-          lastUpdated: serverTimestamp()
-        })
+        await supabase.from('wallets').update({ available: (wallet?.available ?? 0) - (totalDebit), last_updated: new Date().toISOString() }).eq('user_id', user.id)
 
-        await addDoc(collection(db, 'users', user.uid, 'transactions'), {
-          title: `Bill Payment - ${providers.find(p => p.id === selectedProvider)?.name}`,
-          amount: totalDebit,
+        await supabase.from('transactions').insert({
+          user_id: user.id,
+          title: `Bill Payment - ${providers.find(p => p.id === selectedProvider)?.name || selectedProvider}`,
+          amount: finalAmount,
           type: 'expense',
-          category: 'Bills',
-          timestamp: serverTimestamp(),
+          category: selectedCategory,
+          created_at: new Date().toISOString(),
           status: 'completed',
-          referenceId: result.transactionId,
-          details: { category: selectedCategory, account: accountNumber }
+          reference_id: result.transactionId,
+          account_number: accountNumber
         })
 
         setStage('success')

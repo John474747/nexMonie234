@@ -21,8 +21,7 @@ import {
   Languages
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useUser, useFirebase } from '@/firebase'
-import { doc, updateDoc } from 'firebase/firestore'
+import { useUser } from '@/firebase'
 import {
   Dialog,
   DialogContent,
@@ -32,6 +31,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { useToast } from '@/hooks/use-toast'
+import { supabase } from '@/lib/supabase'
 
 const LANGUAGES = [
   { id: 'English', label: 'English (UK)', flag: '🇬🇧' },
@@ -44,14 +44,13 @@ const LANGUAGES = [
 export default function ProfileScreen() {
   const router = useRouter()
   const { user } = useUser()
-  const { auth, db } = useFirebase()
   const { toast } = useToast()
   
   const [langDialogOpen, setLangDialogOpen] = useState(false)
   const [selectedLang, setSelectedLang] = useState('English')
 
   const handleLogout = async () => {
-    await auth.signOut()
+    await supabase.auth.signOut()
     router.push('/')
   }
 
@@ -60,9 +59,7 @@ export default function ProfileScreen() {
     setSelectedLang(value)
     
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        preferredLanguage: value
-      })
+      await supabase.from('profiles').update({ preferred_language: value }).eq('id', user.id)
       toast({
         title: "Language Updated",
         description: `Your preferred language is now set to ${value}.`,
@@ -96,8 +93,8 @@ export default function ProfileScreen() {
           <div className="flex flex-col items-center text-center relative z-10">
             <div className="relative mb-6">
               <div className="w-[100px] h-[100px] rounded-[36px] bg-[#E8F5F3] flex items-center justify-center border-4 border-white shadow-lg overflow-hidden ring-1 ring-gray-100">
-                {user?.photoURL ? (
-                  <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                {user?.user_metadata?.avatar_url ? (
+                  <img src={user?.user_metadata?.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
                   <NexLogo iconOnly className="w-12 h-12" />
                 )}
