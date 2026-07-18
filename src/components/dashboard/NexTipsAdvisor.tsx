@@ -1,45 +1,52 @@
 "use client"
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Sparkles, ArrowRight, Loader2, Info } from 'lucide-react'
 import { Card } from '@/components/ui/card'
-import { getPersonalizedFinancialAdvice, type PersonalizedFinancialAdviceOutput } from '@/ai/flows/personalized-financial-advice-flow'
-import { useUser, useDoc, useCollection, useFirebase } from '@/firebase'
-import { doc, collection, query, limit, orderBy } from 'firebase/firestore'
+import {
+  getPersonalizedFinancialAdvice,
+  type PersonalizedFinancialAdviceOutput,
+} from '@/ai/flows/personalized-financial-advice-flow'
+import { useUser, useCollection } from '@/firebase'
 
 export function NexTipsAdvisor() {
   const { user } = useUser()
-  const { db } = useFirebase()
   const [advice, setAdvice] = useState<PersonalizedFinancialAdviceOutput | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
-  const walletRef = useMemo(() => user ? doc(db, 'users', user.uid, 'wallets', 'main') : null, [user, db])
-  const { data: wallet } = useDoc<any>(walletRef)
+  // Use Supabase-backed hooks (no Firebase SDK)
+  const { data: wallets } = useCollection<any>(
+    user ? { table: 'wallets', userId: user.id, limit: 1 } : null
+  )
+  const wallet = wallets?.[0] ?? null
 
-  const transactionsQuery = useMemo(() => 
-    user ? query(collection(db, 'users', user.uid, 'transactions'), orderBy('timestamp', 'desc'), limit(5)) : null,
-  [user, db])
-  const { data: transactions } = useCollection<any>(transactionsQuery)
+  const { data: transactions } = useCollection<any>(
+    user ? { table: 'transactions', userId: user.id, limit: 5 } : null
+  )
 
   useEffect(() => {
     async function fetchAdvice() {
-      if (!user || !wallet) return;
+      if (!user || !wallet) return
 
       try {
-        const spendingPatterns = transactions?.length 
-          ? `User has ${transactions.length} recent transactions in categories like ${Array.from(new Set(transactions.map(t => t.category))).join(', ')}.`
-          : "No transaction history yet. User is just starting their nex Monie journey.";
+        const categories = Array.from(
+          new Set((transactions ?? []).map((t: any) => t.category).filter(Boolean))
+        ).join(', ')
+
+        const spendingPatterns = transactions?.length
+          ? `User has ${transactions.length} recent transactions in categories: ${categories || 'various'}.`
+          : 'No transaction history yet. User is just starting their nex Monie journey.'
 
         const result = await getPersonalizedFinancialAdvice({
           spendingPatterns,
-          currentBalance: wallet.available || 0,
-          financialGoals: "Grow wealth sustainably and automate daily savings."
+          currentBalance: wallet.available ?? 0,
+          financialGoals: 'Grow wealth sustainably and automate daily savings.',
         })
         setAdvice(result)
         setError(false)
-      } catch (error) {
-        console.error("Advice generation error:", error)
+      } catch (err) {
+        console.error('Advice generation error:', err)
         setError(true)
       } finally {
         setLoading(false)
@@ -57,7 +64,9 @@ export function NexTipsAdvisor() {
     return (
       <Card className="p-8 bg-white border border-gray-100 shadow-soft rounded-[32px] h-40 flex flex-col items-center justify-center gap-3">
         <Loader2 className="animate-spin text-primary" size={24} />
-        <span className="text-[12px] font-bold text-gray-400 uppercase tracking-[0.2em]">Syncing Intelligence...</span>
+        <span className="text-[12px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+          Syncing Intelligence...
+        </span>
       </Card>
     )
   }
@@ -70,7 +79,9 @@ export function NexTipsAdvisor() {
         </div>
         <div className="flex-1">
           <h4 className="text-[14px] font-bold text-[#1A1A1A]">Advisor Offline</h4>
-          <p className="text-[11px] text-gray-400 font-medium leading-tight">Please ensure your AI environment is configured correctly.</p>
+          <p className="text-[11px] text-gray-400 font-medium leading-tight">
+            Please ensure your AI environment is configured correctly.
+          </p>
         </div>
       </Card>
     )
@@ -79,7 +90,6 @@ export function NexTipsAdvisor() {
   return (
     <Card className="bg-white border border-gray-100 shadow-soft p-8 rounded-[40px] flex items-start gap-6 relative overflow-hidden group">
       <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl group-hover:bg-primary/10 transition-colors" />
-      
       <div className="w-16 h-16 bg-primary rounded-[24px] flex items-center justify-center text-white shrink-0 shadow-xl shadow-primary/20 relative z-10">
         <Sparkles size={32} />
       </div>
@@ -90,10 +100,14 @@ export function NexTipsAdvisor() {
           </span>
         </div>
         <p className="text-[17px] text-[#1A1A1A] font-bold mb-5 leading-tight tracking-tight">
-          {advice?.tips?.[0] || "Optimize your wealth for elite growth."}
+          {advice?.tips?.[0] || 'Optimize your wealth for elite growth.'}
         </p>
         <button className="flex items-center text-[13px] font-bold text-primary group/btn active:opacity-60 transition-all border-b border-primary/20 pb-0.5">
-          Elite Analysis <ArrowRight size={16} className="ml-2 group-hover/btn:translate-x-1.5 transition-transform" />
+          Elite Analysis{' '}
+          <ArrowRight
+            size={16}
+            className="ml-2 group-hover/btn:translate-x-1.5 transition-transform"
+          />
         </button>
       </div>
     </Card>

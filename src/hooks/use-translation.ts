@@ -1,20 +1,24 @@
-import { useMemo } from 'react';
-import { useUser, useDoc, useFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useUser, useDoc } from '@/firebase';
 import { translations, type Language } from '@/lib/translations';
 
+/**
+ * Reads the user's preferred language from the Supabase `profiles` table
+ * and returns a translation helper `t(key)`.
+ * Previously read from Firestore — now fully on Supabase.
+ */
 export function useTranslation() {
   const { user } = useUser();
-  const { db } = useFirebase();
+  const { data: profile } = useDoc<any>(
+    user ? { table: 'profiles', id: user.id } : null
+  );
 
-  const profileRef = useMemo(() => user ? doc(db, 'users', user.uid) : null, [user, db]);
-  const { data: profile } = useDoc<any>(profileRef);
+  const currentLanguage: Language =
+    (profile?.preferred_language as Language) || 'English';
 
-  const currentLanguage: Language = (profile?.preferredLanguage as Language) || 'English';
-
-  const t = (key: string) => {
-    return translations[currentLanguage]?.[key] || translations['English'][key] || key;
-  };
+  const t = (key: string): string =>
+    translations[currentLanguage]?.[key] ||
+    translations['English']?.[key] ||
+    key;
 
   return { t, currentLanguage };
 }

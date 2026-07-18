@@ -1,7 +1,12 @@
 
 import { NextResponse } from 'next/server';
+import { getRouteUser } from '@/lib/supabase-server';
+
 
 export async function GET() {
+
+  const user = await getRouteUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const banks = [
     { id: '044', name: 'Access Bank' },
     { id: '058', name: 'GTBank' },

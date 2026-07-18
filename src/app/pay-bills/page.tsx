@@ -138,7 +138,7 @@ export default function PayBillsWorkflow() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: user.uid,
+          userId: user.id,
           providerId: selectedProvider,
           amount: finalAmount,
           accountNumber

@@ -1,5 +1,7 @@
 
 import { NextResponse } from 'next/server';
+import { getRouteUser } from '@/lib/supabase-server';
+
 
 const MOCK_PLANS: Record<string, Array<{ id: string; title: string; validity: string; price: number }>> = {
   MTN: [
@@ -29,6 +31,9 @@ const MOCK_PLANS: Record<string, Array<{ id: string; title: string; validity: st
 };
 
 export async function GET(request: Request) {
+
+  const user = await getRouteUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const network = searchParams.get('network');
 

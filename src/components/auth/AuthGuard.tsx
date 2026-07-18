@@ -26,9 +26,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     setAuthLoading(true);
     setError(null);
 
-    const isDemo = !email.trim() && !password.trim();
-    const finalEmail = isDemo ? 'demo@nexmonie.com' : email;
-    const finalPassword = isDemo ? 'password123' : password;
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and password.');
+      setAuthLoading(false);
+      return;
+    }
+    const finalEmail = email;
+    const finalPassword = password;
 
     try {
       if (isSignUp) {
@@ -43,19 +47,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           email: finalEmail,
           password: finalPassword,
         });
-        if (signInError) {
-          if (isDemo && (signInError.message.includes('Invalid login') || signInError.message.includes('User not found'))) {
-             // For demo simplicity, try sign up if login fails for demo@
-             const { error: retryError } = await supabase.auth.signUp({
-              email: finalEmail,
-              password: finalPassword,
-            });
-            if (retryError) throw retryError;
-            setMessage('Demo account created. Please confirm your email or try signing in again.');
-          } else {
-            throw signInError;
-          }
-        }
+        if (signInError) throw signInError;
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');

@@ -1,7 +1,12 @@
 
 import { NextResponse } from 'next/server';
+import { getRouteUser } from '@/lib/supabase-server';
+
 
 export async function POST(request: Request) {
+
+  const user = await getRouteUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const body = await request.json();
   
   // Simulate payment processing

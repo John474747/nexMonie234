@@ -1,5 +1,7 @@
 
 import { NextResponse } from 'next/server';
+import { getRouteUser } from '@/lib/supabase-server';
+
 
 const PROVIDERS: Record<string, any[]> = {
   electricity: [
@@ -31,6 +33,9 @@ const PROVIDERS: Record<string, any[]> = {
 };
 
 export async function GET(request: Request) {
+
+  const user = await getRouteUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const category = searchParams.get('category');
 

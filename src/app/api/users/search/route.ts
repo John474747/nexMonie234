@@ -1,7 +1,12 @@
 
 import { NextResponse } from 'next/server';
+import { getRouteUser } from '@/lib/supabase-server';
+
 
 export async function GET(request: Request) {
+
+  const user = await getRouteUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query');
 

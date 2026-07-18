@@ -133,7 +133,7 @@ export default function EarnScreen() {
             </div>
             <div className="w-10 h-10 rounded-nex-xs bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden cursor-pointer shadow-sm">
               {user?.photoURL ? (
-                <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                <img src={user.user_metadata?.avatar_url} alt="Profile" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
               ) : (
                 <User size={22} className="text-gray-300" />
               )}
