@@ -1,0 +1,40 @@
+{
+  "placeholderImages": [
+    {
+      "id": "wallet-product",
+      "description": "NexWallet visual",
+      "imageUrl": "https://picsum.photos/seed/wallet/400/250",
+      "imageHint": "digital wallet"
+    },
+    {
+      "id": "savings-product",
+      "description": "High-yield savings visual",
+      "imageUrl": "https://picsum.photos/seed/savings/400/250",
+      "imageHint": "saving money"
+    },
+    {
+      "id": "investment-product",
+      "description": "Investment opportunities",
+      "imageUrl": "https://picsum.photos/seed/invest/400/250",
+      "imageHint": "stock market"
+    },
+    {
+      "id": "insurance-product",
+      "description": "Insurance plans",
+      "imageUrl": "https://picsum.photos/seed/insurance/400/250",
+      "imageHint": "security protection"
+    },
+    {
+      "id": "actions-hero",
+      "description": "Actions Hub Hero Illustration",
+      "imageUrl": "https://picsum.photos/seed/fintech-hero/600/400",
+      "imageHint": "smartphone vault"
+    },
+    {
+      "id": "invite-illustration",
+      "description": "Invite friends illustration",
+      "imageUrl": "https://picsum.photos/seed/gift-box/400/300",
+      "imageHint": "gift box"
+    }
+  ]
+}
