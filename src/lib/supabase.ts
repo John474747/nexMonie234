@@ -8,35 +8,20 @@ const supabaseAnonKey =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxeW95cnN3cWpxdnNvenR0ZnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwODY1NTcsImV4cCI6MjA5ODY2MjU1N30.kN-gkXz0Jteu00YmJ37W9T22K_FkwSqnhNvosQCvtic';
 
 /**
- * Cookie-based storage adapter for the Supabase browser client.
+ * Browser Supabase client.
  *
- * Storing the session in a cookie (rather than localStorage) lets the
- * Next.js middleware and API route handlers read the token server-side
- * without an extra round-trip to the client.
+ * Deliberately uses the default localStorage storage — NOT a cookie adapter.
+ * The Supabase session JSON can be 3–4 KB, which silently exceeds the browser
+ * per-cookie limit (~4 KB) and causes writes to be dropped, breaking auth.
+ *
+ * Two lightweight indicator cookies are synced separately in useUser via
+ * onAuthStateChange so that Next.js middleware and API route handlers can
+ * inspect the session server-side without hitting the size limit:
+ *   nex-auth  → "1" when authenticated, empty on sign-out  (middleware check)
+ *   nex-token → JWT access token only                       (API route verify)
  */
-function makeCookieStorage() {
-  const esc = (k: string) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return {
-    getItem(key: string): string | null {
-      if (typeof document === 'undefined') return null;
-      const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + esc(key) + '=([^;]*)'));
-      return m ? decodeURIComponent(m[1]) : null;
-    },
-    setItem(key: string, value: string): void {
-      if (typeof document === 'undefined') return;
-      const yr = 60 * 60 * 24 * 365;
-      document.cookie = `${key}=${encodeURIComponent(value)}; path=/; SameSite=Lax; max-age=${yr}`;
-    },
-    removeItem(key: string): void {
-      if (typeof document === 'undefined') return;
-      document.cookie = `${key}=; path=/; max-age=0`;
-    },
-  };
-}
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: makeCookieStorage(),
     persistSession: true,
     detectSessionInUrl: true,
   },

@@ -4,10 +4,9 @@ import { hasValidSessionCookie } from '@/lib/supabase-server';
 /**
  * Edge middleware — runs before every matched request.
  *
- * Strategy:
- *  - Page routes   → pass through; AuthGuard handles client-side protection.
- *  - API routes    → reject with 401 immediately if no valid session cookie.
- *    Individual handlers also call getRouteUser() for full JWT verification.
+ * Page routes: pass through — AuthGuard handles client-side protection.
+ * API routes:  reject with 401 if the nex-auth indicator cookie is absent.
+ *              Individual handlers call getRouteUser() for full JWT verification.
  */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
